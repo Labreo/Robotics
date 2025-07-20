@@ -104,13 +104,14 @@ class Robot:
         self.sensor_points_world = {}
 
     def _create_wall_sensor_layout(self):
-        points = {'front': [], 'left': [], 'right': []}
+        points = {'front': [], 'left': [], 'right': [],'back':[]}
         half = self.size / 2
         for i in range(4):
             spacing = (i - 1.5) * (self.size / 4)
             points['front'].append(pygame.Vector2(spacing, half))
             points['right'].append(pygame.Vector2(half, spacing))
             points['left'].append(pygame.Vector2(-half, spacing))
+            points['back'].append(pygame.Vector2(-spacing, -half))
         return points
 
     def _create_floor_sensor_layout(self):
@@ -134,8 +135,8 @@ class Robot:
         self.angle = (self.angle + self.angular_vel * dt) % 360
 
     def update_sensors(self, walls, line_path_segments):
-        self.sensor_points_world = {'wall': {'front': [], 'left': [], 'right': []}, 'floor': []}
-        self.wall_sensors = {'front': [1]*4, 'left': [1]*4, 'right': [1]*4}
+        self.sensor_points_world = {'wall': {'front': [], 'left': [], 'right': [],'back':[]}, 'floor': []}
+        self.wall_sensors = {'front': [1]*4, 'left': [1]*4, 'right': [1]*4,'back': [1]*4}
         self.floor_sensors = [1]*5
         
         # Update Wall Sensors
