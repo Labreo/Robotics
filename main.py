@@ -98,7 +98,7 @@ class Robot:
 
         # --- Sensors ---
         self.wall_sensors = {}
-        self.floor_sensors = [] # A list of 5 sensor values
+        self.floor_sensors = {} # 16 sensor values
         self.wall_sensor_points_relative = self._create_wall_sensor_layout()
         self.floor_sensor_points_relative = self._create_floor_sensor_layout()
         self.sensor_points_world = {}
@@ -115,13 +115,17 @@ class Robot:
         return points
 
     def _create_floor_sensor_layout(self):
-        # 5 sensors in a line under the robot to detect the floor line
-        points = []
-        for i in range(5):
-            spacing = (i - 2) * (self.size / 5)
-            points.append(pygame.Vector2(spacing, 0))
+        # 16 sensors in a line under the robot to detect the floor line
+        points = {'front': [], 'left': [], 'right': [],'back':[]}
+        half = self.size / 2
+        for i in range(4):
+            spacing = (i - 1.5) * (self.size / 4)
+            points['front'].append(pygame.Vector2(spacing, half))
+            points['right'].append(pygame.Vector2(half, spacing))
+            points['left'].append(pygame.Vector2(-half, spacing))
+            points['back'].append(pygame.Vector2(-spacing, -half))
         return points
-
+    
     def update_physics(self, dt):
         f_fl, f_fr, f_rl, f_rr = self.wheel_forces
         force_y = (f_fl + f_fr + f_rl + f_rr)
@@ -135,9 +139,9 @@ class Robot:
         self.angle = (self.angle + self.angular_vel * dt) % 360
 
     def update_sensors(self, walls, line_path_segments):
-        self.sensor_points_world = {'wall': {'front': [], 'left': [], 'right': [],'back':[]}, 'floor': []}
+        self.sensor_points_world = {'wall': {'front': [], 'left': [], 'right': [],'back':[]}, 'floor': {'front': [], 'left': [], 'right': [],'back':[]}}
         self.wall_sensors = {'front': [1]*4, 'left': [1]*4, 'right': [1]*4,'back': [1]*4}
-        self.floor_sensors = [1]*5
+        self.floor_sensors = {'front': [1]*4, 'left': [1]*4, 'right': [1]*4,'back': [1]*4}
         
         # Update Wall Sensors
         for side, points in self.wall_sensor_points_relative.items():
@@ -151,21 +155,25 @@ class Robot:
                         self.wall_sensors[side][i] = 0; break
 
         # Update Floor Sensors
-        for i, p_rel in enumerate(self.floor_sensor_points_relative):
-            p_rot = p_rel.rotate(-self.angle)
-            p_world = self.pos + p_rot
-            self.sensor_points_world['floor'].append(p_world)
-            for seg_start, seg_end in line_path_segments:
-                # Check if sensor is near the line segment
-                p = p_world
-                a = pygame.Vector2(seg_start)
-                b = pygame.Vector2(seg_end)
-                if (b-a).length() == 0: continue
-                t = max(0, min(1, (p-a).dot(b-a) / (b-a).length_squared()))
-                closest_point = a + t * (b-a)
-                if p.distance_to(closest_point) < 4: # 4px tolerance
-                    self.floor_sensors[i] = 0; break
+        for side, points in self.floor_sensor_points_relative.items():
+            for i, p_rel in enumerate(points):
+               p_rot = p_rel.rotate(-self.angle)
+               p_world = self.pos + p_rot
+               self.sensor_points_world['floor'][side].append(p_world)
+        
+               for seg_start, seg_end in line_path_segments:
+                   a = pygame.Vector2(seg_start)
+                   b = pygame.Vector2(seg_end)
+                   if (b - a).length() == 0:
+                      continue
+                   t = max(0, min(1, (p_world - a).dot(b - a) / (b - a).length_squared()))
+                   closest_point = a + t * (b - a)
+                   if p_world.distance_to(closest_point) < 4:
+                      self.floor_sensors[side][i] = 0
+                      break
 
+
+        
     def draw(self, screen):
         # Draw Robot
         robot_surface = pygame.Surface((self.size, self.size), pygame.SRCALPHA)
@@ -180,9 +188,11 @@ class Robot:
             for i, (start, end) in enumerate(self.sensor_points_world['wall'][side]):
                 color = RED if self.wall_sensors[side][i] == 0 else GREEN
                 pygame.draw.line(screen, color, start, end, 1)
-        for i, p in enumerate(self.sensor_points_world['floor']):
-            color = RED if self.floor_sensors[i] == 0 else GREEN
-            pygame.draw.circle(screen, color, p, 3)
+        for side in self.sensor_points_world['floor']:
+            for i, p in enumerate(self.sensor_points_world['floor'][side]):
+                color = RED if self.floor_sensors[side][i] == 0 else GREEN
+                pygame.draw.circle(screen, color, (int(p.x), int(p.y)), 3)
+
 
     def manual_control(self, keys):
         p = 100
@@ -211,8 +221,9 @@ class Robot:
         # Weighted error calculation from 5 floor sensors
         # [-2, -1, 0, 1, 2] weights for sensors
         # A value of 0 means perfectly centered
-        error = (self.floor_sensors[0] * -2 + self.floor_sensors[1] * -1 + 
-                 self.floor_sensors[3] * 1 + self.floor_sensors[4] * 2)
+        sensors = self.floor_sensors['front']
+        error = (sensors[0] * -2 + sensors[1] * -1 + sensors[2] * 1 + sensors[3] * 2)
+
 
         # If all sensors are off the line, the error is ambiguous.
         # We use the last known error to try and find the line again.
