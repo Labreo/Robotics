@@ -1,6 +1,7 @@
 import pygame
 import math
 import random
+import sys
 
 # --- Constants ---
 # Screen dimensions
@@ -14,6 +15,9 @@ BLUE_ROBOT = (50, 50, 255)
 GRAY = (40, 40, 40)
 BLUE_LINE = (0, 150, 255)
 GOAL_COLOR = (255, 215, 0) # Gold for the goal
+FPS = 60
+COMMAND_DELAY = 0.1
+TURN_SPEED = 90
 
 # --- Maze Generator ---
 class Maze:
@@ -230,8 +234,13 @@ class Robot:
         elif keys[pygame.K_RIGHT]: self.wheel_forces = [-p, p, p, -p]
         elif keys[pygame.K_a]: self.wheel_forces = [p, -p, p, -p]
         elif keys[pygame.K_d]: self.wheel_forces = [-p, p, -p, p]
-
+        if keys[pygame.K_LEFT]:
+            self.angle -= TURN_SPEED * dt
+        if keys[pygame.K_RIGHT]:
+            self.angle += TURN_SPEED * dt
+            
     def auto_wall_follow(self):
+        self.angle += TURN_SPEED * dt
         p, tp = 80, 100
         front = self.wall_sensors.get('front', [1]*4)
         left = self.wall_sensors.get('left', [1]*4)
@@ -240,6 +249,7 @@ class Robot:
         else: self.wheel_forces = [p, p, p, p]
 
     def auto_line_follow(self):
+
         # PID Constants
         Kp = 0.4  # Proportional gain
         Ki = 0.01 # Integral gain
@@ -266,7 +276,7 @@ class Robot:
         
         base_speed = 60
         self.wheel_forces = [base_speed - turn, base_speed + turn, base_speed - turn, base_speed + turn]
-
+        self.angle += TURN_SPEED * dt
 
 # --- Main Simulation ---
 def main():
@@ -291,12 +301,15 @@ def main():
             line_path_segments.append((line_path_pixels[i], line_path_pixels[i+1]))
 
     # --- State ---
+    global dt
     running = True
     autopilot_mode = "MANUAL" # MANUAL, WALL, LINE
     win_message = ""
     dt = 0
+    command_timer=0
 
     while running:
+        dt=clock.tick(FPS)/1000
         for event in pygame.event.get():
             if event.type == pygame.QUIT: running = False
             if event.type == pygame.KEYDOWN:
@@ -307,9 +320,14 @@ def main():
                     autopilot_mode = modes[(current_index + 1) % len(modes)]
 
         if not win_message:
-            if autopilot_mode == "MANUAL": robot.manual_control(pygame.key.get_pressed())
-            elif autopilot_mode == "WALL": robot.auto_wall_follow()
-            elif autopilot_mode == "LINE": robot.auto_line_follow()
+            command_timer += dt
+            if command_timer >= COMMAND_DELAY:
+                if autopilot_mode == "MANUAL":
+                    robot.manual_control(pygame.key.get_pressed())
+                elif autopilot_mode == "WALL":
+                    robot.auto_wall_follow()
+                elif autopilot_mode == "LINE":
+                    robot.auto_line_follow()
 
         robot.update_physics(dt,maze.walls)
         robot.update_sensors(maze.walls, line_path_segments)
