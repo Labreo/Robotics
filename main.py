@@ -91,17 +91,16 @@ class Robot:
         self.wheel_forces = [0, 0, 0, 0]
         self.force_to_vel_factor = 0.5
         self.force_to_rot_factor = 5
-
-        # --- PID Controller for Line Following ---
+        self.rect = pygame.Rect(0, 0, size, size)
+        self.rect.center = self.pos
         self.pid_error_sum = 0
         self.pid_last_error = 0
-
-        # --- Sensors ---
         self.wall_sensors = {}
-        self.floor_sensors = {} # 16 sensor values
+        self.floor_sensors = {}
         self.wall_sensor_points_relative = self._create_wall_sensor_layout()
         self.floor_sensor_points_relative = self._create_floor_sensor_layout()
         self.sensor_points_world = {}
+
 
     def _create_wall_sensor_layout(self):
         points = {'front': [], 'left': [], 'right': [],'back':[]}
@@ -126,17 +125,45 @@ class Robot:
             points['back'].append(pygame.Vector2(-spacing, -half))
         return points
     
-    def update_physics(self, dt):
+    def update_physics(self, dt,walls):
+        original_pos = pygame.Vector2(self.pos)
+
         f_fl, f_fr, f_rl, f_rr = self.wheel_forces
         force_y = (f_fl + f_fr + f_rl + f_rr)
         force_x = (-f_fl + f_fr + f_rl - f_rr)
         torque = (-f_fl + f_fr - f_rl + f_rr)
+
         local_vel = pygame.Vector2(force_x, force_y) * self.force_to_vel_factor
         world_vel = local_vel.rotate(-self.angle)
         self.vel = world_vel
         self.angular_vel = torque * self.force_to_rot_factor
-        self.pos += self.vel * dt
-        self.angle = (self.angle + self.angular_vel * dt) % 360
+
+        new_pos = self.pos + self.vel * dt
+        new_angle = (self.angle + self.angular_vel * dt) % 360
+
+        trial_rect = pygame.Rect(0, 0, self.size, self.size)
+        trial_rect.center = new_pos
+        collision = any(trial_rect.colliderect(w) for w in walls)
+
+        if not collision:
+            self.pos = new_pos
+            self.angle = new_angle
+        else:
+            # Try X movement only
+            temp_pos_x = pygame.Vector2(self.pos.x + self.vel.x * dt, self.pos.y)
+            trial_rect.center = temp_pos_x
+            if not any(trial_rect.colliderect(w) for w in walls):
+                self.pos.x += self.vel.x * dt
+            # Try Y movement only
+            temp_pos_y = pygame.Vector2(self.pos.x, self.pos.y + self.vel.y * dt)
+            trial_rect.center = temp_pos_y
+            if not any(trial_rect.colliderect(w) for w in walls):
+                self.pos.y += self.vel.y * dt
+            self.vel = pygame.Vector2(0, 0)
+            self.angular_vel = 0
+
+        self.rect.center = self.pos
+
 
     def update_sensors(self, walls, line_path_segments):
         self.sensor_points_world = {'wall': {'front': [], 'left': [], 'right': [],'back':[]}, 'floor': {'front': [], 'left': [], 'right': [],'back':[]}}
@@ -284,7 +311,7 @@ def main():
             elif autopilot_mode == "WALL": robot.auto_wall_follow()
             elif autopilot_mode == "LINE": robot.auto_line_follow()
 
-        robot.update_physics(dt)
+        robot.update_physics(dt,maze.walls)
         robot.update_sensors(maze.walls, line_path_segments)
 
         if goal_rect.collidepoint(robot.pos) and not win_message:
